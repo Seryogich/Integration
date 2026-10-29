@@ -1,0 +1,26 @@
+[project]
+name = "forecast-service"
+version = "0.4.0"
+description = "House price forecast API – loads model from MLflow registry"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.7",
+    "mlflow==3.1.0",
+    "xgboost>=2.1",
+    "scikit-learn>=1.5",
+    "numpy>=1.26",
+    "pandas>=2.2",
+    "psycopg2-binary>=2.9",
+    "pyarrow>=17",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "httpx>=0.27",
+]
+
+[tool.uv]
+package = false

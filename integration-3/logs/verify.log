@@ -1,0 +1,39 @@
+=== Practice 3 verification 2026-10-29 12:25:47 against http://127.0.0.1:8000 ===
+[PASS] 1. Docker Compose: Orders API is up (GET /health)
+[PASS] Forecast API is NOT reachable from the host (port 8001 not published)
+[PASS] Registration -> 201  (status=201)
+[PASS] Login (form) returns a JWT
+[PASS] 9. Requests without / with a bad token -> 401  ((401, 401, 401, 401))
+[PASS] 2. POST /orders -> 202, status=pending, predicted_price=null  (status=202, 0.02s)
+[PASS] 2. Location header points to the order  (/orders/71)
+[PASS] 3. After processing status becomes priced (price stored)  (138840.34)
+[PASS] 4. Batch of 10 orders: a result for every element  (status=200, 1.11s)
+[PASS] Exp.1: one concurrent batch of 10 is faster than 10 separate batches  (1.11s vs 10.40s)
+[PASS] 5. Batch with 51 orders (> limit) -> 422  (status=422)
+[PASS] Invalid element structure -> 422  (status=422)
+[PASS] 7. PATCH of property parameters -> 202, pending, price cleared  (status=202)
+[PASS] 7. A new forecast is computed and differs from the old one  (378609.44)
+[PASS] 8. PATCH of client data only: forecast is NOT recomputed  (status=200)
+[PASS] 10. Re-running the task: no duplicates, state is correct  (orders before/after: 88/88)
+[PASS] Order deleted during processing: task ended cleanly (event 'skipped')  (['skipped'])
+[PASS] Event log holds order id, result and timestamp  (events: 3)
+
+--- Experiment 3: orders-api restarted while a task is pending ---
+   $ docker compose up -d forecast-api orders-api
+[PASS]    stack is up with a slow Forecast API
+[PASS]    order created, status pending
+   $ docker compose restart orders-api
+[PASS]    orders-api is healthy again after the restart
+[PASS]    after the restart the order is STILL pending: variant A lost the task (expected)  (pending)
+   restoring default settings ...
+   $ docker compose up -d
+[PASS]    a manual re-run completes the lost order
+
+=== TIMINGS (for the report) ===
+| Scenario | Time |
+|---|---|
+| POST /orders (202), s | 0.02 |
+| 1 batch with 10 orders (concurrent), s | 1.11 |
+| 10 batches with 1 order each (sequential), s | 10.40 |
+
+Summary: 23/23 checks passed

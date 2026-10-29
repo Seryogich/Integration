@@ -1,0 +1,16 @@
+# Secrets: real files are never committed, only templates and instructions (R1.2)
+secrets/*
+!secrets/*.example
+!secrets/README.md
+
+# Local environment
+.env
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.idea/
+.vscode/
+
+# Backups created by scripts/experiments.sh
+*.bak

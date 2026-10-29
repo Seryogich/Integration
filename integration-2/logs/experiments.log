@@ -1,0 +1,65 @@
+=== experiments started 2026-10-28T19:31:49+02:00 (target: exp1) ===
+
+### Experiment 1 - rotation of the signing key (R3.2 / T11)
+orders-api healthy after 0s
+old token issued: eyJhbGciOiJIUzI1NiIsInR5... (160 chars)
+GET /auth/me with old token BEFORE rotation -> HTTP 200   (expected 200)
+inode of secrets/jwt_secret_key before: 14355223812562653
+inode of secrets/jwt_secret_key after : 14355223812562653   (same inode => mount stays valid)
+$ docker compose restart orders-api
+ Container integration-2-orders-api-1 Restarting 
+ Container integration-2-orders-api-1 Started 
+[exit code: 0]
+orders-api healthy after 1s
+GET /auth/me with OLD token AFTER rotation -> HTTP 401   (expected 401)
+new token issued: eyJhbGciOiJIUzI1NiIsInR5...
+GET /auth/me with NEW token -> HTTP 200   (expected 200)
+RESULT: tokens signed with the previous key are rejected after rotation; users must log in again.
+
+=== experiments finished 2026-10-28T19:31:53+02:00 ===
+=== experiments started 2026-10-28T19:32:18+02:00 (target: exp3) ===
+
+### Experiment 3 - rotation of the database password (R3.4)
+orders-api healthy after 0s
+(secret values are not logged; old=32 chars, new=32 chars)
+--- 3a: baseline - the initialised database accepts the current password
+psql with OLD password (baseline) -> exit 0 ::  Container integration-2-postgres-run-30504114db5d Creating   Container integration-2-postgres-run-30504114db5d Created  1 
+--- 3b: change secrets/db_password and restart postgres
+$ docker compose restart postgres
+ Container integration-2-postgres-1 Restarting 
+ Container integration-2-postgres-1 Started 
+[exit code: 0]
+psql with NEW password (value of POSTGRES_PASSWORD_FILE) -> exit 2 ::  Container integration-2-postgres-run-5a52da75c53b Creating   Container integration-2-postgres-run-5a52da75c53b Created  psql: error: connection to server at "p
+psql with OLD password -> exit 0 ::  Container integration-2-postgres-run-a9811badf536 Creating   Container integration-2-postgres-run-a9811badf536 Created  1 
+RESULT 3b: the NEW password is rejected, the OLD one still works. POSTGRES_PASSWORD_FILE is read only
+           when the data directory is initialised for the first time; afterwards the role's
+           password lives inside the volume (pg_authid), not in the file.
+--- 3c: orders-api now presents the new password -> cannot authenticate
+$ docker compose restart orders-api
+ Container integration-2-orders-api-1 Restarting 
+ Container integration-2-orders-api-1 Started 
+[exit code: 0]
+$ docker compose logs --tail 6 orders-api
+orders-api-1  | WARNING:  Database not ready (attempt 6/30): connection to server at "postgres" (172.19.0.2), port 5432 failed: FATAL:  password authentication failed for user "orders"
+orders-api-1  | 
+orders-api-1  | WARNING:  Database not ready (attempt 7/30): connection to server at "postgres" (172.19.0.2), port 5432 failed: FATAL:  password authentication failed for user "orders"
+orders-api-1  | 
+orders-api-1  | WARNING:  Database not ready (attempt 8/30): connection to server at "postgres" (172.19.0.2), port 5432 failed: FATAL:  password authentication failed for user "orders"
+orders-api-1  | 
+--- 3d: safe rotation for a running environment WITHOUT data loss
+    (1) change the password inside PostgreSQL, (2) make sure the secret file holds the same value,
+    (3) restart the consumers so they re-read /run/secrets/db_password
+ALTER ROLE
+[exit code: 0]
+$ docker compose restart orders-api
+ Container integration-2-orders-api-1 Restarting 
+ Container integration-2-orders-api-1 Started 
+[exit code: 0]
+orders-api healthy after 1s
+GET /health -> HTTP 200
+POST /auth/login (needs the database) -> HTTP 200   (expected 200; existing user data survived)
+psql with NEW password (after ALTER ROLE) -> exit 0 ::  Container integration-2-postgres-run-b0366b849bf6 Creating   Container integration-2-postgres-run-b0366b849bf6 Created  1 
+psql with OLD password (must now fail) -> exit 2 ::  Container integration-2-postgres-run-9008610fa392 Creating   Container integration-2-postgres-run-9008610fa392 Created  psql: error: connection to server at "p
+RESULT 3d: secret file, database role and application agree again; no data was lost.
+
+=== experiments finished 2026-10-28T19:32:54+02:00 ===

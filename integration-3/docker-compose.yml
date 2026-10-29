@@ -1,0 +1,72 @@
+name: integration-3
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_DB: ${POSTGRES_DB}
+      # The password is delivered as a file, never as a value (R1.5).
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  forecast-api:
+    build: ./forecast_service
+    environment:
+      MODEL_VERSION: ${MODEL_VERSION:-v1}
+      # Artificial latency of /predict (seconds) - makes the concurrency experiments visible.
+      FORECAST_DELAY_SEC: ${FORECAST_DELAY_SEC:-1.0}
+    # No "ports" section on purpose (R1.10): the service is reachable only
+    # inside the Compose network as http://forecast-api:8001 (R1.11).
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=2).status == 200 else 1)"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  orders-api:
+    build: ./orders_service
+    ports:
+      - "${ORDERS_PORT:-8000}:8000"
+    environment:
+      # Non-sensitive configuration only (R1.7). Secrets come from /run/secrets.
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      FORECAST_URL: http://forecast-api:8001
+      FORECAST_TIMEOUT: ${FORECAST_TIMEOUT:-3}
+      BATCH_MAX_ITEMS: ${BATCH_MAX_ITEMS:-50}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+    secrets:
+      - db_password
+      - jwt_secret_key
+    depends_on:
+      postgres:
+        condition: service_healthy
+      # forecast-api is intentionally NOT a dependency: the Orders API must
+      # start and keep working (graceful degradation) when it is down.
+    restart: unless-stopped
+
+secrets:
+  db_password:
+    file: ./secrets/db_password
+  jwt_secret_key:
+    file: ./secrets/jwt_secret_key
+
+volumes:
+  pgdata:

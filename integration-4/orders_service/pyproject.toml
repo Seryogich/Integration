@@ -1,0 +1,28 @@
+[project]
+name = "orders-service"
+version = "0.3.0"
+description = "Orders API: order management, user authentication (JWT), single external entry point"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "sqlalchemy>=2.0",
+    "psycopg2-binary>=2.9",
+    "pydantic>=2.7",
+    "pyjwt>=2.8",
+    "pwdlib[argon2]>=0.2",
+    "python-multipart>=0.0.9",
+    "httpx>=0.27",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

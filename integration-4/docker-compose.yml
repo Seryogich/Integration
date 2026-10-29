@@ -1,0 +1,125 @@
+name: integration-4
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v3.1.0
+    entrypoint: ["/bin/bash", "-c"]
+    # FIX: the psycopg3 dialect (postgresql+psycopg://) sends experiment_id as VARCHAR and fails with
+    # "operator does not exist: integer = character varying". MLflow 3.1.0 works with psycopg2.
+    # The password is URL-encoded (generated passwords may contain / + =).
+    command:
+      - |
+        set -e
+        pip install -q psycopg2-binary
+        PW=$$(python -c "import urllib.parse;print(urllib.parse.quote(open('/run/secrets/db_password').read().strip(), safe=''))")
+        exec mlflow server --host 0.0.0.0 --port 5000 \
+          --backend-store-uri "postgresql+psycopg2://$${POSTGRES_USER}:$${PW}@postgres:5432/mlflow" \
+          --serve-artifacts --artifacts-destination /mlartifacts
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+    secrets:
+      - db_password
+    volumes:
+      - mlartifacts:/mlartifacts
+    ports:
+      - "${MLFLOW_PORT:-5000}:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=2).status == 200 else 1)"
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 60s
+    restart: unless-stopped
+
+  forecast-api:
+    build: ./forecast_service
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MODEL_NAME: ${MODEL_NAME:-house-price}
+      MODEL_ALIAS: ${MODEL_ALIAS:-prod}
+      FORECAST_DELAY_SEC: ${FORECAST_DELAY_SEC:-0}
+    # No ports: internal only
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=2).status == 200 else 1)"
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    restart: unless-stopped
+
+  orders-api:
+    build: ./orders_service
+    ports:
+      - "${ORDERS_PORT:-8000}:8000"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      FORECAST_URL: http://forecast-api:8001
+      FORECAST_TIMEOUT: ${FORECAST_TIMEOUT:-5}
+      BATCH_MAX_ITEMS: ${BATCH_MAX_ITEMS:-50}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+    secrets:
+      - db_password
+      - jwt_secret_key
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  trainer:
+    build: ./training_service
+    profiles: ["train"]
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MLFLOW_EXPERIMENT_NAME: house-price
+      SEED: "42"
+    depends_on:
+      mlflow:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    # run with: docker compose --profile train run --rm trainer
+
+secrets:
+  db_password:
+    file: ./secrets/db_password
+  jwt_secret_key:
+    file: ./secrets/jwt_secret_key
+
+volumes:
+  pgdata:
+  mlartifacts:
