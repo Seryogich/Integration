@@ -1,0 +1,56 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  forecast-api:
+    build:
+      context: .
+      dockerfile: forecast-service/Dockerfile
+    environment:
+      MODEL_VERSION: ${MODEL_VERSION}
+    ports:
+      - "${FORECAST_PORT:-8001}:8001"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request as u; u.urlopen('http://localhost:8001/health')",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  orders-api:
+    build:
+      context: .
+      dockerfile: orders-service/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      FORECAST_URL: http://forecast-api:8001
+      FORECAST_TIMEOUT: ${FORECAST_TIMEOUT}
+    ports:
+      - "${ORDERS_PORT:-8000}:8000"
+    # Only the database is a hard dependency: orders cannot work without it.
+    # forecast-api is intentionally NOT listed here. Orders API degrades
+    # gracefully (predicted_price = null) when the forecast is unavailable,
+    # so it must be able to start and serve requests even if forecast-api
+    # is down, still starting up, or unhealthy.
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:

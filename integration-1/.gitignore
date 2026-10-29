@@ -1,0 +1,7 @@
+.env
+__pycache__/
+*.pyc
+artifacts/
+.venv/
+.pytest_cache/
+*.csv

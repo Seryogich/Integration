@@ -1,0 +1,17 @@
+[project]
+name = "int-1"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = [
+    "dotenv>=0.9.9",
+    "fastapi>=0.141.1",
+    "httpx>=0.28.1",
+    "joblib>=1.5.3",
+    "pandas>=3.0.5",
+    "psycopg[binary]>=3.3.4",
+    "pydantic>=2.13.4",
+    "scikit-learn>=1.9.0",
+    "sqlalchemy>=2.0.52",
+    "tenacity>=9.1.4",
+    "uvicorn>=0.52.4",
+]
